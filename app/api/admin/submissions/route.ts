@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
 
     const url = new URL(request.url)
     const status = url.searchParams.get('status') || 'all'
+    const search = url.searchParams.get('search') || ''
 
     const pool = createPool()
     try {
@@ -66,6 +67,12 @@ export async function GET(request: NextRequest) {
       if (status !== 'all') {
         query += ' WHERE status = ?'
         params.push(status)
+      }
+
+      if (search) {
+        query += (status !== 'all' ? ' AND' : ' WHERE') + 
+          ' (metamask_account LIKE ? OR discord LIKE ? OR wechat LIKE ? OR telegram LIKE ? OR lattice_x_forum LIKE ? OR referrer LIKE ?)'
+        params.push(...Array(6).fill(`%${search}%`))
       }
 
       query += ' ORDER BY created_at DESC'
