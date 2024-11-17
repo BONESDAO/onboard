@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import mysql from 'mysql2/promise'
 import jwt from 'jsonwebtoken'
-import bcrypt from 'bcryptjs'
+import { ethers } from 'ethers'
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -15,34 +15,41 @@ const pool = mysql.createPool({
 
 export async function POST(request: Request) {
   try {
-    const { username, password } = await request.json()
-    console.log('Received login request for username:', username)
+    const { address, signature, message } = await request.json()
+    console.log('Received login request for address:', address)
 
-    if (!username || !password) {
-      console.log('Missing username or password')
-      return NextResponse.json({ message: '用户名和密码是必需的' }, { status: 400 })
+    if (!address || !signature || !message) {
+      console.log('Missing address, signature, or message')
+      return NextResponse.json({ message: '地址、签名和消息都是必需的' }, { status: 400 })
     }
 
     const connection = await pool.getConnection()
     try {
       const [rows] = await connection.execute(
-        'SELECT * FROM admins WHERE username = ?',
-        [username]
+        'SELECT * FROM admins WHERE ethereum_address = ?',
+        [address.toLowerCase()]
       )
       console.log('Database query result:', rows)
 
       if (!Array.isArray(rows) || rows.length === 0) {
-        console.log('No user found with username:', username)
-        return NextResponse.json({ message: '无效的凭据' }, { status: 401 })
+        console.log('No admin found with address:', address)
+        return NextResponse.json({ message: '无效的管理员地址' }, { status: 401 })
       }
 
       const admin = rows[0] as any
-      const isPasswordValid = await bcrypt.compare(password, admin.password)
-      console.log('Password validation result:', isPasswordValid)
 
-      if (!isPasswordValid) {
-        console.log('Invalid password for username:', username)
-        return NextResponse.json({ message: '无效的凭据' }, { status: 401 })
+      // Verify the signature
+      const expectedMessage = `Login to Admin Dashboard: ${address.toLowerCase()}`
+      if (message !== expectedMessage) {
+        console.log('Invalid message for address:', address)
+        return NextResponse.json({ message: '无效的消息' }, { status: 401 })
+      }
+
+      const recoveredAddress = ethers.utils.verifyMessage(message, signature)
+
+      if (recoveredAddress.toLowerCase() !== address.toLowerCase()) {
+        console.log('Invalid signature for address:', address)
+        return NextResponse.json({ message: '无效的签名' }, { status: 401 })
       }
 
       const jwtSecret = process.env.JWT_SECRET
@@ -52,12 +59,12 @@ export async function POST(request: Request) {
       }
 
       const token = jwt.sign(
-        { id: admin.id, username: admin.username },
+        { id: admin.id, address: admin.ethereum_address },
         jwtSecret,
         { expiresIn: '1h' }
       )
 
-      console.log('Login successful for username:', username)
+      console.log('Login successful for address:', address)
       return NextResponse.json({ token })
     } finally {
       connection.release()
