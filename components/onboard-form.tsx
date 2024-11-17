@@ -172,10 +172,10 @@ export function OnboardForm() {
     }
   }
 
-  const renderContactInput = (type: string, value: string, setValue: (value: string) => void, icon: string) => (
+  const renderContactInput = (type: string, value: string, setValue: (value: string) => void, icon: string, required: boolean = false) => (
     <div className="flex-1 relative">
       <div className="absolute -top-3 left-2 bg-white px-1 text-xs text-[#4CAF50] z-10">
-        {type}
+        {type}{required && "（必填）"}
       </div>
       <div className="relative border-[#4CAF50] border rounded-md focus-within:ring-1 focus-within:ring-[#4CAF50]">
         <Image 
@@ -191,10 +191,12 @@ export function OnboardForm() {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           aria-label={type}
+          required={required}
         />
       </div>
     </div>
   )
+
 
   return (
     <div className="min-h-screen bg-white">
@@ -273,8 +275,8 @@ export function OnboardForm() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {renderContactInput("Discord", discord, setDiscord, "discord")}
               {renderContactInput("微信", wechat, setWechat, "WeChat")}
-              {renderContactInput("Telegram", telegram, setTelegram, "telegram")}
-              {renderContactInput("LatticeX Forum", latticeXForum, setLatticeXForum, "latticeX")}
+              {renderContactInput("Telegram", telegram, setTelegram, "telegram", true)}
+              {renderContactInput("LatticeX Forum", latticeXForum, setLatticeXForum, "latticeX", true)}
             </div>
             <p className="text-xs text-gray-500 text-center">
               请填写你的 Discord 账号、微信号、Telegram 账号或 LatticeX Forum 论坛账号（至少填写一个）
@@ -367,7 +369,7 @@ export function OnboardForm() {
               </p>
             </div>
             <p className="text-sm">
-              官网导航请访问 BONESDAO 官方域名：bones.icu
+              官网导航请访问 BONESDAO 官方域名：<a href="https://bones.icu" target="_blank" rel="noopener noreferrer" className="text-blue-500">bones.icu</a>
             </p>
           </CardContent>
         </Card>
