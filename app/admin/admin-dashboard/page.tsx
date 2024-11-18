@@ -8,6 +8,10 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { ethers } from 'ethers'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import USDT_ABI from './platon_usdt.abi.json'
+
+const USDT_CONTRACT_ADDRESS = '0xeac734fb7581D8eB2CE4949B0896FC4E76769509'
 
 interface Submission {
   id: number
@@ -21,7 +25,17 @@ interface Submission {
   created_at: string
 }
 
-type FilterStatus = 'all' | 'approved' | 'rejected' | 'pending'
+interface TransactionRecord {
+  id: number
+  admin_metamask_account: string
+  recipient_metamask_account: string
+  recipient_lattice_x_forum: string
+  transaction_type: 'LAT' | 'USDT'
+  amount: string
+  transaction_time: string
+}
+
+type FilterStatus = 'all' | 'approved' | 'rejected' | 'pending' | 'transactions'
 
 async function refreshToken() {
   try {
@@ -134,6 +148,97 @@ async function updateSubmissionStatus(id: number, status: 'approved' | 'rejected
   }
 }
 
+async function saveTransactionRecord(record: Omit<TransactionRecord, 'id' | 'transaction_time'>) {
+  let token = localStorage.getItem('adminToken')
+  if (!token) {
+    throw new Error('Token 不存在')
+  }
+
+  try {
+    console.log('Sending transaction record:', record)
+    const response = await fetch('/api/admin/save-transaction', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(record),
+    })
+
+    if (response.status === 401) {
+      // Token expired, try to refresh
+      token = await refreshToken()
+      // Retry the request with the new token
+      const retryResponse = await fetch('/api/admin/save-transaction', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(record),
+      })
+
+      if (!retryResponse.ok) {
+        const errorData = await retryResponse.json()
+        throw new Error(errorData.error || '保存交易记录失败')
+      }
+
+      return await retryResponse.json()
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || '保存交易记录失败')
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('保存交易记录时出错:', error)
+    throw error
+  }
+}
+
+async function fetchTransactionRecords(): Promise<TransactionRecord[]> {
+  let token = localStorage.getItem('adminToken')
+  if (!token) {
+    throw new Error('Token 不存在')
+  }
+
+  try {
+    const response = await fetch('/api/admin/transaction-records', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+
+    if (response.status === 401) {
+      // Token expired, try to refresh
+      token = await refreshToken()
+      // Retry the request with the new token
+      const retryResponse = await fetch('/api/admin/transaction-records', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (!retryResponse.ok) {
+        throw new Error('获取交易记录失败')
+      }
+
+      return await retryResponse.json()
+    }
+
+    if (!response.ok) {
+      throw new Error('获取交易记录失败')
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('获取交易记录时发生错误:', error)
+    throw error
+  }
+}
+
 export default function AdminDashboard() {
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [error, setError] = useState('')
@@ -142,12 +247,16 @@ export default function AdminDashboard() {
   const [search, setSearch] = useState('')
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false)
   const [selectedAccount, setSelectedAccount] = useState('')
+  const [selectedLatticeXForum, setSelectedLatticeXForum] = useState('')
   const [transactionAmount, setTransactionAmount] = useState('')
   const [currentNetwork, setCurrentNetwork] = useState<string | null>(null)
+  const [transactionType, setTransactionType] = useState<'LAT' | 'USDT'>('LAT')
+  const [transactionStatus, setTransactionStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle')
+  const [transactionRecords, setTransactionRecords] = useState<TransactionRecord[]>([])
   const router = useRouter()
 
   useEffect(() => {
-    loadSubmissions()
+    loadData()
     setupNetworkListeners()
 
     return () => {
@@ -181,18 +290,26 @@ export default function AdminDashboard() {
     window.location.reload()
   }
 
-  const loadSubmissions = async () => {
+  const loadData = async () => {
     try {
       setLoading(true)
-      const data = await fetchSubmissions(filter, search)
-      setSubmissions(data)
+      if (filter === 'transactions') {
+        const records = await fetchTransactionRecords()
+        setTransactionRecords(records)
+        setSubmissions([])
+      } else {
+        const data = await fetchSubmissions(filter, search)
+        setSubmissions(data)
+        setTransactionRecords([])
+      }
       setError('')
     } catch (err) {
       if (err instanceof Error && err.message === 'Token 不存在') {
         router.push('/admin/admin-login')
       } else {
-        setError('加载提交失败')
+        setError('加载数据失败')
         setSubmissions([])
+        setTransactionRecords([])
       }
     } finally {
       setLoading(false)
@@ -202,7 +319,7 @@ export default function AdminDashboard() {
   const handleStatusUpdate = async (id: number, status: 'approved' | 'rejected') => {
     try {
       await updateSubmissionStatus(id, status)
-      await loadSubmissions()
+      await loadData()
     } catch (err) {
       setError('更新状态失败')
     }
@@ -220,10 +337,11 @@ export default function AdminDashboard() {
       case 'approved': return '已通过'
       case 'rejected': return '未通过'
       case 'all': return '全部'
+      case 'transactions': return '交易记录'
     }
   }
 
-  const handleTransactionClick = async (account: string) => {
+  const handleTransactionClick = async (account: string, latticeXForum: string) => {
     if (typeof window.ethereum === 'undefined') {
       alert('MetaMask 未安装!')
       return
@@ -236,7 +354,9 @@ export default function AdminDashboard() {
       setCurrentNetwork(network.chainId.toString())
 
       setSelectedAccount(account)
+      setSelectedLatticeXForum(latticeXForum)
       setIsTransactionModalOpen(true)
+      setTransactionStatus('idle')
     } catch (error) {
       console.error('连接MetaMask失败:', error)
       alert('连接MetaMask失败。请确保MetaMask已解锁并授权此网站。')
@@ -276,6 +396,7 @@ export default function AdminDashboard() {
     }
 
     try {
+      setTransactionStatus('pending')
       const provider = new ethers.providers.Web3Provider(window.ethereum)
       
       const network = await provider.getNetwork()
@@ -287,20 +408,56 @@ export default function AdminDashboard() {
       const signer = updatedProvider.getSigner()
       
       if (isNaN(parseFloat(transactionAmount)) || parseFloat(transactionAmount) <= 0) {
-        throw new Error('请输入有效的lat数量')
+        throw new Error('请输入有效的数量')
       }
 
-      const tx = await signer.sendTransaction({
-        to: selectedAccount,
-        value: ethers.utils.parseEther(transactionAmount)
-      })
+      let tx;
+      if (transactionType === 'LAT') {
+        const balance = await signer.getBalance()
+        const amount = ethers.utils.parseEther(transactionAmount)
+        if (balance.lt(amount)) {
+          throw new Error('LAT余额不足')
+        }
+        tx = await signer.sendTransaction({
+          to: selectedAccount,
+          value: amount,
+          gasLimit: ethers.utils.hexlify(100000) // 手动设置gas限制
+        })
+      } else {
+        const usdtContract = new ethers.Contract(USDT_CONTRACT_ADDRESS, USDT_ABI, signer)
+        const decimals = await usdtContract.decimals()
+        const amount = ethers.utils.parseUnits(transactionAmount, decimals)
+        const balance = await usdtContract.balanceOf(await signer.getAddress())
+        if (balance.lt(amount)) {
+          throw new Error('USDT余额不足')
+        }
+        tx = await usdtContract.transfer(selectedAccount, amount, {
+          gasLimit: ethers.utils.hexlify(200000) // 手动设置gas限制
+        })
+      }
       
       await tx.wait()
-      alert('交易成功!')
-      setIsTransactionModalOpen(false)
-      setTransactionAmount('')
+
+      // 保存交易记录
+      const adminAccount = await signer.getAddress()
+      await saveTransactionRecord({
+        admin_metamask_account: adminAccount,
+        recipient_metamask_account: selectedAccount,
+        recipient_lattice_x_forum: selectedLatticeXForum,
+        transaction_type: transactionType,
+        amount: transactionAmount
+      })
+
+      setTransactionStatus('success')
+      setTimeout(() => {
+        setIsTransactionModalOpen(false)
+        setTransactionAmount('')
+        setTransactionStatus('idle')
+        loadData() // 重新加载数据以更新交易记录
+      }, 3000)
     } catch (error) {
       console.error('交易失败:', error)
+      setTransactionStatus('error')
       let errorMessage = '交易失败。'
       if (error instanceof Error) {
         errorMessage += ' ' + error.message
@@ -327,15 +484,49 @@ export default function AdminDashboard() {
           <Button onClick={() => setFilter('approved')} variant={filter === 'approved' ? 'default' : 'outline'}>已通过</Button>
           <Button onClick={() => setFilter('rejected')} variant={filter === 'rejected' ? 'default' : 'outline'}>未通过</Button>
           <Button onClick={() => setFilter('all')} variant={filter === 'all' ? 'default' : 'outline'}>全部</Button>
+          <Button onClick={() => setFilter('transactions')} variant={filter === 'transactions' ? 'default' : 'outline'}>交易记录</Button>
           <Button onClick={handleLogout}>登出</Button>
         </div>
       </div>
       <div className="mb-4 text-sm text-gray-600">
-        {getStatusText(filter)}人数为: {submissions.length}
+        {getStatusText(filter)}数量: {filter === 'transactions' ? transactionRecords.length : submissions.length}
       </div>
       {error && <p className="text-red-500 mb-4">{error}</p>}
       {loading ? (
         <p>加载中...</p>
+      ) : filter === 'transactions' ? (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>管理员账户</TableHead>
+              <TableHead>接收账户</TableHead>
+              <TableHead>LatticeX Forum</TableHead>
+              <TableHead>交易类型</TableHead>
+              <TableHead>数量</TableHead>
+              <TableHead>交易时间</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {transactionRecords.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center">
+                  没有交易记录
+                </TableCell>
+              </TableRow>
+            ) : (
+              transactionRecords.map((record) => (
+                <TableRow key={record.id}>
+                  <TableCell>{record.admin_metamask_account}</TableCell>
+                  <TableCell>{record.recipient_metamask_account}</TableCell>
+                  <TableCell>{record.recipient_lattice_x_forum}</TableCell>
+                  <TableCell>{record.transaction_type}</TableCell>
+                  <TableCell>{record.amount}</TableCell>
+                  <TableCell>{new Date(record.transaction_time).toLocaleString()}</TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
       ) : (
         <Table>
           <TableHeader>
@@ -388,7 +579,7 @@ export default function AdminDashboard() {
                     )}
                     {submission.status === 'approved' && (
                       <Button
-                        onClick={() => handleTransactionClick(submission.metamask_account)}
+                        onClick={() => handleTransactionClick(submission.metamask_account, submission.lattice_x_forum)}
                         className="mr-2"
                       >
                         交易
@@ -407,15 +598,32 @@ export default function AdminDashboard() {
           <DialogHeader>
             <DialogTitle>发起交易</DialogTitle>
             <DialogDescription>
-              您正在向以下账户发起lat交易：
+              您正在向以下账户发起交易：
               <br />
               {selectedAccount}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="transactionType" className="text-right">
+                交易类型
+              </Label>
+              <Select
+                value={transactionType}
+                onValueChange={(value: 'LAT' | 'USDT') => setTransactionType(value)}
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="选择交易类型" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="LAT">LAT</SelectItem>
+                  <SelectItem value="USDT">USDT</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="amount" className="text-right">
-                lat数量
+                {transactionType} 数量
               </Label>
               <Input
                 id="amount"
@@ -432,7 +640,25 @@ export default function AdminDashboard() {
             )}
           </div>
           <DialogFooter>
-            <Button type="submit" onClick={handleTransactionConfirm}>确认交易</Button>
+            {transactionStatus === 'idle' && (
+              <Button type="submit" onClick={handleTransactionConfirm}>确认交易</Button>
+            )}
+            {transactionStatus === 'pending' && (
+              <div className="text-center">
+                <p>正在查询交易结果...</p>
+              </div>
+            )}
+            {transactionStatus === 'success' && (
+              <div className="text-center text-green-500">
+                <p>交易完成</p>
+              </div>
+            )}
+            {transactionStatus === 'error' && (
+              <div className="text-center">
+                <p className="text-red-500">交易失败</p>
+                <Button onClick={handleTransactionConfirm}>重新交易</Button>
+              </div>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
