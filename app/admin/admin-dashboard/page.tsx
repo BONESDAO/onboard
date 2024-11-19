@@ -74,9 +74,7 @@ async function fetchSubmissions(filter: FilterStatus, search: string): Promise<S
     })
 
     if (response.status === 401) {
-      // Token expired, try to refresh
       token = await refreshToken()
-      // Retry the request with the new token
       const retryResponse = await fetch(`/api/admin/submissions?status=${filter}&search=${encodeURIComponent(search)}`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -101,7 +99,7 @@ async function fetchSubmissions(filter: FilterStatus, search: string): Promise<S
   }
 }
 
-async function updateSubmissionStatus(id: number, status: 'approved' | 'rejected') {
+async function updateSubmissionStatus(id: number, status: 'approved' | 'rejected' | 'pending') {
   let token = localStorage.getItem('adminToken')
   if (!token) {
     throw new Error('Token 不存在')
@@ -118,9 +116,7 @@ async function updateSubmissionStatus(id: number, status: 'approved' | 'rejected
     })
 
     if (response.status === 401) {
-      // Token expired, try to refresh
       token = await refreshToken()
-      // Retry the request with the new token
       const retryResponse = await fetch('/api/admin/update-submission-status', {
         method: 'POST',
         headers: {
@@ -166,9 +162,7 @@ async function saveTransactionRecord(record: Omit<TransactionRecord, 'id' | 'tra
     })
 
     if (response.status === 401) {
-      // Token expired, try to refresh
       token = await refreshToken()
-      // Retry the request with the new token
       const retryResponse = await fetch('/api/admin/save-transaction', {
         method: 'POST',
         headers: {
@@ -212,9 +206,7 @@ async function fetchTransactionRecords(): Promise<TransactionRecord[]> {
     })
 
     if (response.status === 401) {
-      // Token expired, try to refresh
       token = await refreshToken()
-      // Retry the request with the new token
       const retryResponse = await fetch('/api/admin/transaction-records', {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -316,7 +308,7 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleStatusUpdate = async (id: number, status: 'approved' | 'rejected') => {
+  const handleStatusUpdate = async (id: number, status: 'approved' | 'rejected' | 'pending') => {
     try {
       await updateSubmissionStatus(id, status)
       await loadData()
@@ -421,7 +413,7 @@ export default function AdminDashboard() {
         tx = await signer.sendTransaction({
           to: selectedAccount,
           value: amount,
-          gasLimit: ethers.utils.hexlify(100000) // 手动设置gas限制
+          gasLimit: ethers.utils.hexlify(100000)
         })
       } else {
         const usdtContract = new ethers.Contract(USDT_CONTRACT_ADDRESS, USDT_ABI, signer)
@@ -432,13 +424,12 @@ export default function AdminDashboard() {
           throw new Error('USDT余额不足')
         }
         tx = await usdtContract.transfer(selectedAccount, amount, {
-          gasLimit: ethers.utils.hexlify(200000) // 手动设置gas限制
+          gasLimit: ethers.utils.hexlify(200000)
         })
       }
       
       await tx.wait()
 
-      // 保存交易记录
       const adminAccount = await signer.getAddress()
       await saveTransactionRecord({
         admin_metamask_account: adminAccount,
@@ -453,7 +444,7 @@ export default function AdminDashboard() {
         setIsTransactionModalOpen(false)
         setTransactionAmount('')
         setTransactionStatus('idle')
-        loadData() // 重新加载数据以更新交易记录
+        loadData()
       }, 3000)
     } catch (error) {
       console.error('交易失败:', error)
@@ -572,6 +563,7 @@ export default function AdminDashboard() {
                         <Button
                           onClick={() => handleStatusUpdate(submission.id, 'rejected')}
                           variant="destructive"
+                          className="mr-2"
                         >
                           拒绝
                         </Button>
@@ -583,6 +575,15 @@ export default function AdminDashboard() {
                         className="mr-2"
                       >
                         交易
+                      </Button>
+                    )}
+                    {submission.status === 'rejected' && (
+                      <Button
+                        onClick={() => handleStatusUpdate(submission.id, 'pending')}
+                        variant="outline"
+                        className="mr-2  hover:bg-black hover:text-white"
+                      >
+                        重新审核
                       </Button>
                     )}
                   </TableCell>

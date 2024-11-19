@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const { id, status } = body
 
-  if (!id || !status || (status !== 'approved' && status !== 'rejected')) {
+  if (!id || !status || !['approved', 'rejected', 'pending'].includes(status)) {
     return NextResponse.json({ message: 'Invalid request body' }, { status: 400 })
   }
 
