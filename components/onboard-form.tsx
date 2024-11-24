@@ -211,6 +211,12 @@ export function OnboardForm() {
               className="text-white"
             />
             <span className="text-white font-medium text-lg">Bonesdao</span>
+            <a href="https://forum.latticex.foundation/t/topic/7184" className='bg-none text-white'>管理公会</a>
+            <a href="https://forum.latticex.foundation/t/topic/7182" className='bg-none text-white'>开发公会</a>
+            <a href="https://forum.latticex.foundation/t/topic/7185" className='bg-none text-white'>策划组</a>
+            <a href="https://forum.latticex.foundation/t/topic/7186" className='bg-none text-white'>投研组</a>
+            <a href="https://forum.latticex.foundation/t/topic/7187" className='bg-none text-white'>新闻组</a>
+            <a href="#" className='bg-none text-white'>BONESPay</a>
           </div>
           <Select defaultValue="zh">
             <SelectTrigger className="w-[80px] bg-transparent border-white text-white">
@@ -225,7 +231,8 @@ export function OnboardForm() {
 
       <main className="container mx-auto px-4 py-8 max-w-2xl">
         <h1 className="text-3xl font-bold text-center text-[#4CAF50] mb-12">Onboard BONESDAO</h1>
-        
+        <a href="https://www.paytop.io/">
+        <img src="./banner.png" className='mb-5' /></a>
         <form onSubmit={handleSubmit} className="space-y-6 mb-8">
           <div className="flex flex-col items-center gap-4">
             <div className="flex items-center gap-4">
