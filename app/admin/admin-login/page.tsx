@@ -32,7 +32,31 @@ export default function AdminLogin() {
     if (typeof window !== 'undefined' && typeof window.ethereum !== 'undefined') {
       setIsMetamaskInstalled(true)
     }
-  }, [])
+
+ 
+    const checkAuth = async () => {
+      const token = localStorage.getItem('adminToken')
+      if (token) {
+        try {
+          const response = await fetch('/api/admin/verify-token', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          })
+          if (response.ok) {
+            router.push('/admin/admin-dashboard')
+          } else {
+
+            localStorage.removeItem('adminToken')
+          }
+        } catch (error) {
+          console.error('验证token时出错:', error)
+        }
+      }
+    }
+
+    checkAuth()
+  }, [router])
 
   const connectWallet = async () => {
     if (!isMetamaskInstalled) {
@@ -65,7 +89,7 @@ export default function AdminLogin() {
       const provider = new ethers.providers.Web3Provider(window.ethereum)
       const signer = provider.getSigner()
       
-      // Create a unique message for the user to sign
+
       const message = `Login to Admin Dashboard: ${address.toLowerCase()}`
       const signature = await signer.signMessage(message)
 
@@ -108,3 +132,4 @@ export default function AdminLogin() {
     </div>
   )
 }
+

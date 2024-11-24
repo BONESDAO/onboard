@@ -39,16 +39,22 @@ type FilterStatus = 'all' | 'approved' | 'rejected' | 'pending' | 'transactions'
 
 async function refreshToken() {
   try {
+    const refreshToken = localStorage.getItem('refreshToken')
+    if (!refreshToken) {
+      throw new Error('Refresh token not found')
+    }
+
     const response = await fetch('/api/admin/refresh-token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ refreshToken: localStorage.getItem('refreshToken') }),
+      body: JSON.stringify({ refreshToken }),
     })
 
     if (!response.ok) {
-      throw new Error('Token刷新失败')
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Token刷新失败')
     }
 
     const data = await response.json()
@@ -245,16 +251,56 @@ export default function AdminDashboard() {
   const [transactionType, setTransactionType] = useState<'LAT' | 'USDT'>('LAT')
   const [transactionStatus, setTransactionStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle')
   const [transactionRecords, setTransactionRecords] = useState<TransactionRecord[]>([])
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
-    loadData()
+    const checkAuth = async () => {
+      const token = localStorage.getItem('adminToken')
+      if (token) {
+        try {
+          const response = await fetch('/api/admin/verify-token', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          })
+
+          if (response.ok) {
+            setIsAuthenticated(true)
+            loadData()
+          } else {
+            // 如果token无效，尝试刷新
+            try {
+              await refreshToken()
+              setIsAuthenticated(true)
+              loadData()
+            } catch (refreshError) {
+              console.error('刷新token失败:', refreshError)
+              handleLogout()
+            }
+          }
+        } catch (error) {
+          console.error('验证token时出错:', error)
+          handleLogout()
+        }
+      } else {
+        handleLogout()
+      }
+    }
+
+    checkAuth()
     setupNetworkListeners()
 
     return () => {
       removeNetworkListeners()
     }
-  }, [filter, search])
+  }, [])
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadData()
+    }
+  }, [filter, search, isAuthenticated])
 
   const setupNetworkListeners = () => {
     if (typeof window.ethereum !== 'undefined') {
@@ -297,7 +343,7 @@ export default function AdminDashboard() {
       setError('')
     } catch (err) {
       if (err instanceof Error && err.message === 'Token 不存在') {
-        router.push('/admin/admin-login')
+        handleLogout()
       } else {
         setError('加载数据失败')
         setSubmissions([])
@@ -320,6 +366,7 @@ export default function AdminDashboard() {
   const handleLogout = () => {
     localStorage.removeItem('adminToken')
     localStorage.removeItem('refreshToken')
+    setIsAuthenticated(false)
     router.push('/admin/admin-login')
   }
 
@@ -457,6 +504,10 @@ export default function AdminDashboard() {
       }
       alert(errorMessage)
     }
+  }
+
+  if (!isAuthenticated) {
+    return <div>加载中...</div>
   }
 
   return (
@@ -666,3 +717,4 @@ export default function AdminDashboard() {
     </div>
   )
 }
+
