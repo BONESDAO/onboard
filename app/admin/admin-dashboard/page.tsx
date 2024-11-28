@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { ethers } from 'ethers'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import USDT_ABI from './platon_usdt.abi.json'
+import { TransactionStats } from "@/components/transaction-stats"
 
 const USDT_CONTRACT_ADDRESS = '0xeac734fb7581D8eB2CE4949B0896FC4E76769509'
 
@@ -537,6 +538,8 @@ export default function AdminDashboard() {
       {loading ? (
         <p>加载中...</p>
       ) : filter === 'transactions' ? (
+        <>
+         <TransactionStats transactions={transactionRecords} />
         <Table>
           <TableHeader>
             <TableRow>
@@ -569,6 +572,7 @@ export default function AdminDashboard() {
             )}
           </TableBody>
         </Table>
+        </>
       ) : (
         <Table>
           <TableHeader>
