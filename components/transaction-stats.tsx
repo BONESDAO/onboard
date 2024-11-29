@@ -1,12 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DatePickerWithRange } from "@/components/ui/date-range-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
-import { addDays, format, startOfDay, startOfMonth, startOfWeek, startOfYear, subDays, subMonths, subWeeks, subYears } from "date-fns"
+import { addDays, format, startOfDay, endOfDay, startOfMonth, startOfWeek, startOfYear, subDays, subMonths, subWeeks, subYears } from "date-fns"
 
 interface TransactionStats {
   totalLAT: number
@@ -27,10 +27,9 @@ export function TransactionStats({ transactions }: { transactions: any[] }) {
     to: new Date(),
   })
 
-
   const getStats = (): TransactionStats => {
     const start = startOfDay(dateRange.from || new Date())
-    const end = startOfDay(dateRange.to || new Date())
+    const end = endOfDay(dateRange.to || new Date())
 
     const filteredTransactions = transactions.filter(tx => {
       const txDate = new Date(tx.transaction_time)
@@ -48,47 +47,93 @@ export function TransactionStats({ transactions }: { transactions: any[] }) {
     return {
       totalLAT: latTotal,
       totalUSDT: usdtTotal,
-      periodLabel: `${format(start, 'PP')} - ${format(end, 'PP')}`
+      periodLabel: start.getTime() === end.getTime() 
+        ? format(start, 'PP')
+        : `${format(start, 'PP')} - ${format(end, 'PP')}`
     }
   }
 
-  // Generate chart data
   const getChartData = (): ChartData[] => {
     const data: ChartData[] = []
     let start = dateRange.from || subDays(new Date(), 7)
     const end = dateRange.to || new Date()
 
+    const getStartOfPeriod = (date: Date) => {
+      switch (timeRange) {
+        case 'day':
+          return startOfDay(date)
+        case 'week':
+          return startOfWeek(date)
+        case 'month':
+          return startOfMonth(date)
+        case 'year':
+          return startOfYear(date)
+        default:
+          return startOfDay(date)
+      }
+    }
+
+    const formatDate = (date: Date) => {
+      switch (timeRange) {
+        case 'day':
+          return format(date, 'MM-dd')
+        case 'week':
+          return `Week ${format(date, 'w')}`
+        case 'month':
+          return format(date, 'MMM')
+        case 'year':
+          return format(date, 'yyyy')
+        default:
+          return format(date, 'MM-dd')
+      }
+    }
+
+    const incrementPeriod = (date: Date) => {
+      switch (timeRange) {
+        case 'day':
+          return addDays(date, 1)
+        case 'week':
+          return addDays(date, 7)
+        case 'month':
+          return addDays(date, 30)
+        case 'year':
+          return addDays(date, 365)
+        default:
+          return addDays(date, 1)
+      }
+    }
+
     while (start <= end) {
-      const dayStart = startOfDay(start)
-      const dayEnd = addDays(dayStart, 1)
+      const periodStart = getStartOfPeriod(start)
+      const periodEnd = incrementPeriod(periodStart)
       
-      const dayTransactions = transactions.filter(tx => {
+      const periodTransactions = transactions.filter(tx => {
         const txDate = new Date(tx.transaction_time)
-        return txDate >= dayStart && txDate < dayEnd
+        return txDate >= periodStart && txDate < periodEnd
       })
 
-      const latAmount = dayTransactions
+      const latAmount = periodTransactions
         .filter(tx => tx.transaction_type === 'LAT')
         .reduce((sum, tx) => sum + parseFloat(tx.amount), 0)
 
-      const usdtAmount = dayTransactions
+      const usdtAmount = periodTransactions
         .filter(tx => tx.transaction_type === 'USDT')
         .reduce((sum, tx) => sum + parseFloat(tx.amount), 0)
 
       data.push({
-        date: format(start, 'MM-dd'),
+        date: formatDate(start),
         LAT: latAmount,
         USDT: usdtAmount
       })
 
-      start = addDays(start, 1)
+      start = incrementPeriod(start)
     }
 
     return data
   }
 
-  const stats = getStats()
-  const chartData = getChartData()
+  const stats = useMemo(() => getStats(), [dateRange, transactions])
+  const chartData = useMemo(() => getChartData(), [dateRange, timeRange, transactions])
 
   return (
     <div className="space-y-4 mb-8">
