@@ -58,6 +58,14 @@ export function DatePickerWithRange({
             selected={date}
             onSelect={onDateChange}
             numberOfMonths={2}
+            modifiers={{
+              start: date?.from,
+              end: date?.to,
+            }}
+            modifiersStyles={{
+              start: { color: 'white', backgroundColor: 'hsl(var(--primary))' },
+              end: { color: 'white', backgroundColor: 'hsl(var(--primary))' },
+            }}
           />
         </PopoverContent>
       </Popover>
